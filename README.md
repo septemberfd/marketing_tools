@@ -1,4 +1,4 @@
-# Docs to Markdown conversion tools 
+# Docs to Markdown conversion tool
 
 I've used many markdown conversion tools but many of them still generate errors so I decided to use Claude Code and Cursor to generate one that perfect meet my needs. Feel free to use it. 
 

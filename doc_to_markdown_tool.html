@@ -590,6 +590,28 @@
                         </div>
                         <div class="seo-output" id="slug-output">-</div>
                     </div>
+
+                    <!-- URL 前缀选择 -->
+                    <div class="seo-input-group" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e9ecef;">
+                        <label>选择 URL 前缀</label>
+                        <div class="slug-options">
+                            <label class="slug-option">
+                                <input type="radio" name="url-prefix" value="milvus" checked>
+                                milvus.io/blog/
+                            </label>
+                            <label class="slug-option">
+                                <input type="radio" name="url-prefix" value="zilliz">
+                                zilliz.com/blog/
+                            </label>
+                        </div>
+                    </div>
+                    <div class="seo-output-group">
+                        <div class="seo-output-label">
+                            <span>完整 URL</span>
+                            <button class="btn btn-primary btn-sm" id="btn-copy-full-url">复制</button>
+                        </div>
+                        <div class="seo-output" id="full-url-output" style="color: #1a0dab;">-</div>
+                    </div>
                 </div>
             </div>
 
@@ -1302,6 +1324,10 @@
         const slugOutput = document.getElementById('slug-output');
         const btnCopySlug = document.getElementById('btn-copy-slug');
 
+        // 完整 URL 元素
+        const fullUrlOutput = document.getElementById('full-url-output');
+        const btnCopyFullUrl = document.getElementById('btn-copy-full-url');
+
         // SERP 预览元素
         const serpTitle = document.getElementById('serp-title');
         const serpUrl = document.getElementById('serp-url');
@@ -1485,6 +1511,23 @@
             const style = document.querySelector('input[name="slug-style"]:checked').value;
             const slug = textToSlug(text, style);
             slugOutput.textContent = slug;
+            updateFullUrl(slug);
+        }
+
+        // 更新完整 URL
+        function updateFullUrl(slug) {
+            if (!slug || slug === '-') {
+                fullUrlOutput.textContent = '-';
+                return;
+            }
+            const prefix = document.querySelector('input[name="url-prefix"]:checked').value;
+            let fullUrl = '';
+            if (prefix === 'milvus') {
+                fullUrl = 'https://milvus.io/blog/' + slug + '.md';
+            } else {
+                fullUrl = 'https://zilliz.com/blog/' + slug;
+            }
+            fullUrlOutput.textContent = fullUrl;
         }
 
         // 更新 SERP 预览
@@ -1537,6 +1580,29 @@
         slugInput.addEventListener('input', updateSlug);
         document.querySelectorAll('input[name="slug-style"]').forEach(radio => {
             radio.addEventListener('change', updateSlug);
+        });
+
+        // URL 前缀选择事件
+        document.querySelectorAll('input[name="url-prefix"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                const slug = slugOutput.textContent;
+                updateFullUrl(slug);
+            });
+        });
+
+        // 复制完整 URL
+        btnCopyFullUrl.addEventListener('click', async () => {
+            const url = fullUrlOutput.textContent;
+            if (url === '-') {
+                showToast('没有可复制的内容');
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(url);
+                showToast('已复制到剪贴板!');
+            } catch (err) {
+                showToast('复制失败');
+            }
         });
 
         // SERP 输入事件

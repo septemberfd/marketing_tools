@@ -7,6 +7,11 @@
     <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
     <script src="https://unpkg.com/turndown-plugin-gfm/dist/turndown-plugin-gfm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- KaTeX for math rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -246,6 +251,116 @@
             line-height: 1.5;
             resize: none;
             background: #fafbfc;
+        }
+
+        /* Markdown 预览区域 */
+        .markdown-preview {
+            width: 100%;
+            min-height: 400px;
+            max-height: 500px;
+            padding: 20px;
+            overflow-y: auto;
+            background: #fff;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .markdown-preview h1 { font-size: 2em; margin: 0.67em 0; border-bottom: 1px solid #eee; padding-bottom: 0.3em; }
+        .markdown-preview h2 { font-size: 1.5em; margin: 0.83em 0; border-bottom: 1px solid #eee; padding-bottom: 0.3em; }
+        .markdown-preview h3 { font-size: 1.17em; margin: 1em 0; }
+        .markdown-preview h4 { font-size: 1em; margin: 1.33em 0; }
+        .markdown-preview p { margin: 1em 0; }
+        .markdown-preview ul, .markdown-preview ol { margin: 1em 0; padding-left: 2em; }
+        .markdown-preview li { margin: 0.5em 0; }
+        .markdown-preview code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+        }
+        .markdown-preview pre {
+            background: #282c34;
+            color: #abb2bf;
+            padding: 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 1em 0;
+        }
+        .markdown-preview pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+        }
+        .markdown-preview blockquote {
+            border-left: 4px solid #ddd;
+            padding-left: 16px;
+            margin: 1em 0;
+            color: #666;
+        }
+        .markdown-preview table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+        }
+        .markdown-preview th, .markdown-preview td {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        .markdown-preview th {
+            background: #f4f4f4;
+            font-weight: 600;
+        }
+        .markdown-preview img {
+            max-width: 100%;
+            height: auto;
+        }
+        .markdown-preview a {
+            color: #0366d6;
+            text-decoration: none;
+        }
+        .markdown-preview a:hover {
+            text-decoration: underline;
+        }
+        .markdown-preview hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 2em 0;
+        }
+
+        /* 输出模式切换标签 */
+        .output-tabs {
+            display: flex;
+            gap: 0;
+            margin-left: 15px;
+        }
+
+        .output-tab {
+            padding: 6px 14px;
+            border: none;
+            background: rgba(0, 0, 0, 0.05);
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+            color: #666;
+        }
+
+        .output-tab:first-child {
+            border-radius: 4px 0 0 4px;
+        }
+
+        .output-tab:last-child {
+            border-radius: 0 4px 4px 0;
+        }
+
+        .output-tab.active {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .output-tab:hover:not(.active) {
+            background: rgba(0, 0, 0, 0.1);
         }
 
         .hidden {
@@ -864,6 +979,10 @@
             <div class="panel">
                 <div class="panel-header">
                     <span class="panel-title">Markdown 输出</span>
+                    <div class="output-tabs">
+                        <button class="output-tab active" data-output="code">源码</button>
+                        <button class="output-tab" data-output="preview">预览</button>
+                    </div>
                     <div class="panel-actions">
                         <button class="btn btn-success" id="btn-copy">复制结果</button>
                     </div>
@@ -874,6 +993,7 @@
                         id="markdown-output"
                         placeholder="转换后的 Markdown 将显示在这里..."
                     ></textarea>
+                    <div class="markdown-preview hidden" id="markdown-preview"></div>
                 </div>
             </div>
         </div>
@@ -1080,6 +1200,8 @@
         const richInput = document.getElementById('rich-input');
         const htmlInput = document.getElementById('html-input');
         const markdownOutput = document.getElementById('markdown-output');
+        const markdownPreview = document.getElementById('markdown-preview');
+        const outputTabs = document.querySelectorAll('.output-tab');
         const modeTabs = document.querySelectorAll('.mode-tab');
         const inputTitle = document.getElementById('input-title');
         const btnClear = document.getElementById('btn-clear');
@@ -1094,9 +1216,129 @@
         const optBullet = document.getElementById('opt-bullet');
 
         let currentMode = 'rich';
+        let currentOutputMode = 'code'; // 'code' 或 'preview'
 
         // 图片计数器（只在清空时重置）
         let imageCounter = 0;
+
+        // MathML 转 LaTeX 函数
+        function mathMLToLaTeX(node) {
+            try {
+                const mathml = node.outerHTML || new XMLSerializer().serializeToString(node);
+
+                // 简单的 MathML 到 LaTeX 转换映射
+                const conversions = {
+                    // 基本结构
+                    '<math[^>]*>': '',
+                    '</math>': '',
+                    '<mrow>': '{',
+                    '</mrow>': '}',
+                    '<mi>': '',
+                    '</mi>': '',
+                    '<mn>': '',
+                    '</mn>': '',
+                    '<mo>': '',
+                    '</mo>': '',
+
+                    // 上下标
+                    '<msup>': '',
+                    '</msup>': '',
+                    '<msub>': '_',
+                    '</msub>': '',
+                    '<msubsup>': '',
+                    '</msubsup>': '',
+
+                    // 分数
+                    '<mfrac>': '\\frac',
+                    '</mfrac>': '',
+
+                    // 根号
+                    '<msqrt>': '\\sqrt{',
+                    '</msqrt>': '}',
+                    '<mroot>': '\\sqrt[',
+                    '</mroot>': ']',
+
+                    // 求和、积分等
+                    '<munderover>': '',
+                    '</munderover>': '',
+                    '<munder>': '',
+                    '</munder>': '',
+                    '<mover>': '',
+                    '</mover>': '',
+
+                    // 特殊符号
+                    '∑': '\\sum',
+                    '∏': '\\prod',
+                    '∫': '\\int',
+                    '∂': '\\partial',
+                    '∞': '\\infty',
+                    '→': '\\to',
+                    '←': '\\leftarrow',
+                    '↔': '\\leftrightarrow',
+                    '≤': '\\leq',
+                    '≥': '\\geq',
+                    '≠': '\\neq',
+                    '≈': '\\approx',
+                    '±': '\\pm',
+                    '×': '\\times',
+                    '÷': '\\div',
+                    '⋅': '\\cdot',
+                    '√': '\\sqrt',
+                    '∈': '\\in',
+                    '∉': '\\notin',
+                    '⊂': '\\subset',
+                    '⊃': '\\supset',
+                    '∪': '\\cup',
+                    '∩': '\\cap',
+                    '∀': '\\forall',
+                    '∃': '\\exists',
+                    '∅': '\\emptyset',
+                    'α': '\\alpha',
+                    'β': '\\beta',
+                    'γ': '\\gamma',
+                    'δ': '\\delta',
+                    'ε': '\\epsilon',
+                    'θ': '\\theta',
+                    'λ': '\\lambda',
+                    'μ': '\\mu',
+                    'π': '\\pi',
+                    'σ': '\\sigma',
+                    'φ': '\\phi',
+                    'ω': '\\omega',
+                    'Σ': '\\Sigma',
+                    'Π': '\\Pi',
+                    'Ω': '\\Omega',
+                    '𝔼': '\\mathbb{E}',
+                    'ℝ': '\\mathbb{R}',
+                    'ℕ': '\\mathbb{N}',
+                    'ℤ': '\\mathbb{Z}',
+                    '⟨': '\\langle',
+                    '⟩': '\\rangle',
+                    '〈': '\\langle',
+                    '〉': '\\rangle',
+                };
+
+                let latex = mathml;
+
+                // 应用转换
+                for (const [pattern, replacement] of Object.entries(conversions)) {
+                    latex = latex.replace(new RegExp(pattern, 'g'), replacement);
+                }
+
+                // 清理 HTML 标签和属性
+                latex = latex.replace(/<[^>]+>/g, '');
+                latex = latex.replace(/\s+/g, ' ');
+                latex = latex.trim();
+
+                // 处理上标
+                latex = latex.replace(/\^\s*\{?\s*(\w+)\s*\}?/g, '^{$1}');
+
+                return latex || null;
+            } catch (e) {
+                console.error('MathML 转换错误:', e);
+                return null;
+            }
+        }
 
         // 创建 Turndown 实例
         function createTurndownService() {
@@ -1311,6 +1553,121 @@
                 }
             });
 
+            // 处理 MathML 数学公式 - 转换为 LaTeX
+            turndownService.addRule('mathML', {
+                filter: function(node) {
+                    return node.nodeName === 'MATH' ||
+                           node.nodeName === 'math' ||
+                           (node.namespaceURI && node.namespaceURI.includes('MathML'));
+                },
+                replacement: function(content, node) {
+                    const latex = mathMLToLaTeX(node);
+                    if (latex) {
+                        // 检查是否是块级公式
+                        const display = node.getAttribute('display');
+                        if (display === 'block' || node.parentNode.nodeName === 'P') {
+                            return '\n\n$$\n' + latex + '\n$$\n\n';
+                        }
+                        return ' $' + latex + '$ ';
+                    }
+                    return '\n\n$$MATH_FORMULA_PLACEHOLDER$$\n\n';
+                }
+            });
+
+            // 处理 Google Docs 的公式（通常是图片形式）
+            turndownService.addRule('googleDocsFormula', {
+                filter: function(node) {
+                    if (node.nodeName === 'IMG') {
+                        const src = node.getAttribute('src') || '';
+                        const alt = node.getAttribute('alt') || '';
+                        // Google Docs 公式图片通常有特定特征
+                        if (src.includes('chart') || src.includes('equation') ||
+                            alt.includes('equation') || alt.includes('formula')) {
+                            return true;
+                        }
+                    }
+                    // 检查是否是公式容器
+                    if (node.nodeName === 'SPAN' || node.nodeName === 'DIV') {
+                        const className = node.className || '';
+                        if (className.includes('equation') || className.includes('math') ||
+                            className.includes('formula') || className.includes('katex')) {
+                            return true;
+                        }
+                    }
+                    return false;
+                },
+                replacement: function(content, node) {
+                    // 尝试从 data 属性获取 LaTeX
+                    const latex = node.getAttribute('data-latex') ||
+                                  node.getAttribute('data-formula') ||
+                                  node.getAttribute('alt');
+                    if (latex && latex.includes('\\')) {
+                        return '\n\n$$\n' + latex + '\n$$\n\n';
+                    }
+                    return '\n\n$$MATH_FORMULA_PLACEHOLDER$$\n\n';
+                }
+            });
+
+            // 处理 CSS 样式加粗（font-weight: bold 或 font-weight: 700 等）
+            turndownService.addRule('cssBold', {
+                filter: function(node) {
+                    if (node.nodeName === 'SPAN' || node.nodeName === 'P' || node.nodeName === 'DIV') {
+                        const style = node.getAttribute('style') || '';
+                        const computedStyle = node.style;
+                        const fontWeight = computedStyle.fontWeight || '';
+
+                        // 检查 font-weight 是否为加粗
+                        if (fontWeight === 'bold' || fontWeight === 'bolder' ||
+                            (parseInt(fontWeight) >= 600)) {
+                            return true;
+                        }
+
+                        // 也检查内联样式字符串
+                        if (style.match(/font-weight:\s*(bold|bolder|[6-9]00)/i)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                },
+                replacement: function(content, node) {
+                    // 避免空内容
+                    if (!content.trim()) return '';
+                    // 避免重复加粗
+                    if (content.startsWith('**') && content.endsWith('**')) {
+                        return content;
+                    }
+                    return '**' + content.trim() + '**';
+                }
+            });
+
+            // 处理 CSS 样式斜体（font-style: italic）
+            turndownService.addRule('cssItalic', {
+                filter: function(node) {
+                    if (node.nodeName === 'SPAN' || node.nodeName === 'P' || node.nodeName === 'DIV') {
+                        const style = node.getAttribute('style') || '';
+                        const computedStyle = node.style;
+                        const fontStyle = computedStyle.fontStyle || '';
+
+                        if (fontStyle === 'italic' || fontStyle === 'oblique') {
+                            return true;
+                        }
+
+                        if (style.match(/font-style:\s*(italic|oblique)/i)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                },
+                replacement: function(content, node) {
+                    if (!content.trim()) return '';
+                    if (content.startsWith('*') && content.endsWith('*') &&
+                        !content.startsWith('**')) {
+                        return content;
+                    }
+                    return '*' + content.trim() + '*';
+                }
+            });
+
             // 自定义规则：处理 Google Docs 的代码样式
             turndownService.addRule('googleDocsCode', {
                 filter: function(node) {
@@ -1486,9 +1843,63 @@
                     .trim();
 
                 markdownOutput.value = markdown;
+                updatePreview();
             } catch (error) {
                 console.error('转换错误:', error);
                 markdownOutput.value = '转换出错: ' + error.message;
+                updatePreview();
+            }
+        }
+
+        // 更新 Markdown 预览
+        function updatePreview() {
+            const markdown = markdownOutput.value;
+            if (!markdown.trim()) {
+                markdownPreview.innerHTML = '<p style="color: #999;">预览将显示在这里...</p>';
+                return;
+            }
+
+            try {
+                // 先用 marked 解析 markdown
+                let html = marked.parse(markdown);
+
+                // 然后将占位符图片替换为友好的显示格式
+                html = html
+                    .replace(/<img[^>]*src="IMAGE_PLACEHOLDER_(\d+)"[^>]*alt="([^"]*)"[^>]*>/gi,
+                        '<div style="background:#e3f2fd;padding:12px 16px;margin:16px 0;border-radius:6px;border:1px dashed #2196f3;color:#1565c0;text-align:center;">📷 $2 (需要上传图片)</div>')
+                    .replace(/<img[^>]*alt="([^"]*)"[^>]*src="IMAGE_PLACEHOLDER_(\d+)"[^>]*>/gi,
+                        '<div style="background:#e3f2fd;padding:12px 16px;margin:16px 0;border-radius:6px;border:1px dashed #2196f3;color:#1565c0;text-align:center;">📷 $1 (需要上传图片)</div>')
+                    .replace(/<img[^>]*src="SVG_PLACEHOLDER_(\d+)"[^>]*>/gi,
+                        '<div style="background:#fff3e0;padding:12px 16px;margin:16px 0;border-radius:6px;border:1px dashed #ff9800;color:#e65100;text-align:center;">🎨 SVG图形$1 (SVG 图形)</div>')
+                    .replace(/<img[^>]*src="CANVAS_PLACEHOLDER_(\d+)"[^>]*>/gi,
+                        '<div style="background:#f3e5f5;padding:12px 16px;margin:16px 0;border-radius:6px;border:1px dashed #9c27b0;color:#7b1fa2;text-align:center;">🖼️ Canvas图形$1 (Canvas 图形)</div>')
+                    .replace(/<img[^>]*src="EMBED_PLACEHOLDER_(\d+)"[^>]*>/gi,
+                        '<div style="background:#e8f5e9;padding:12px 16px;margin:16px 0;border-radius:6px;border:1px dashed #4caf50;color:#2e7d32;text-align:center;">📦 嵌入内容$1 (嵌入内容)</div>')
+                    .replace(/<img[^>]*src="CHART_PLACEHOLDER_(\d+)"[^>]*>/gi,
+                        '<div style="background:#fff8e1;padding:12px 16px;margin:16px 0;border-radius:6px;border:1px dashed #ffc107;color:#f57c00;text-align:center;">📊 图表$1 (图表)</div>');
+
+                // 处理公式占位符
+                html = html.replace(/MATH_FORMULA_PLACEHOLDER/g,
+                    '<div style="background:#fce4ec;padding:12px 16px;margin:16px 0;border-radius:6px;border:1px dashed #e91e63;color:#c2185b;text-align:center;">📐 数学公式 (需要手动输入 LaTeX)</div>');
+
+                markdownPreview.innerHTML = html;
+
+                // 使用 KaTeX 渲染数学公式
+                if (typeof renderMathInElement !== 'undefined') {
+                    renderMathInElement(markdownPreview, {
+                        delimiters: [
+                            {left: '$$', right: '$$', display: true},
+                            {left: '$', right: '$', display: false},
+                            {left: '\\[', right: '\\]', display: true},
+                            {left: '\\(', right: '\\)', display: false}
+                        ],
+                        throwOnError: false,
+                        errorColor: '#e53935'
+                    });
+                }
+            } catch (error) {
+                console.error('预览错误:', error);
+                markdownPreview.innerHTML = '<p style="color: #e53935;">预览出错: ' + error.message + '</p>';
             }
         }
 
@@ -1568,6 +1979,24 @@
             });
         });
 
+        // 输出模式切换（源码/预览）
+        outputTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                outputTabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                currentOutputMode = tab.dataset.output;
+
+                if (currentOutputMode === 'code') {
+                    markdownOutput.classList.remove('hidden');
+                    markdownPreview.classList.add('hidden');
+                } else {
+                    markdownOutput.classList.add('hidden');
+                    markdownPreview.classList.remove('hidden');
+                    updatePreview();
+                }
+            });
+        });
+
         // 富文本输入事件
         richInput.addEventListener('input', () => {
             convert();
@@ -1575,72 +2004,63 @@
 
         richInput.addEventListener('paste', (e) => {
             const clipboardData = e.clipboardData || window.clipboardData;
-
-            // 检查是否有图片文件
             const items = clipboardData.items;
-            let hasImageFile = false;
+
+            // 检查是否有纯图片文件（截图粘贴）
+            let imageFile = null;
+            const htmlContent = clipboardData.getData('text/html');
 
             if (items) {
                 for (let i = 0; i < items.length; i++) {
-                    if (items[i].type.indexOf('image') !== -1) {
-                        hasImageFile = true;
+                    if (items[i].type.indexOf('image') !== -1 && items[i].kind === 'file') {
+                        imageFile = items[i].getAsFile();
                         break;
                     }
                 }
             }
 
-            if (hasImageFile) {
-                // 阻止默认粘贴行为
+            // 如果是纯截图粘贴（有图片文件但没有 HTML），插入真实图片
+            if (imageFile && !htmlContent) {
                 e.preventDefault();
 
-                // 处理所有图片
-                for (let i = 0; i < items.length; i++) {
-                    if (items[i].type.indexOf('image') !== -1) {
-                        imageCounter++;
-                        const file = items[i].getAsFile();
-                        const imgName = file.name || '图片' + imageCounter;
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    imageCounter++;
+                    const img = document.createElement('img');
+                    img.src = event.target.result;
+                    img.alt = '图片' + imageCounter;
+                    img.setAttribute('data-image-index', imageCounter);
+                    img.style.maxWidth = '100%';
+                    img.style.height = 'auto';
+                    img.style.display = 'block';
+                    img.style.margin = '8px 0';
 
-                        // 创建一个带有 data-placeholder 属性的图片标记
-                        const placeholder = document.createElement('div');
-                        placeholder.setAttribute('data-image-placeholder', imageCounter);
-                        placeholder.setAttribute('data-image-name', imgName);
-                        placeholder.className = 'image-placeholder-marker';
-                        placeholder.textContent = `[图片: ${imgName}]`;
-                        placeholder.style.cssText = 'background:#e3f2fd;padding:8px 12px;margin:8px 0;border-radius:4px;border:1px dashed #2196f3;color:#1565c0;font-size:14px;';
-
-                        // 插入占位符
-                        const selection = window.getSelection();
-                        if (selection.rangeCount > 0) {
-                            const range = selection.getRangeAt(0);
-                            range.deleteContents();
-                            range.insertNode(placeholder);
-                            range.setStartAfter(placeholder);
-                            range.collapse(true);
-                            selection.removeAllRanges();
-                            selection.addRange(range);
-                        } else {
-                            richInput.appendChild(placeholder);
-                        }
+                    const selection = window.getSelection();
+                    if (selection.rangeCount > 0) {
+                        const range = selection.getRangeAt(0);
+                        range.deleteContents();
+                        range.insertNode(img);
+                        range.setStartAfter(img);
+                        range.collapse(true);
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                    } else {
+                        richInput.appendChild(img);
                     }
-                }
 
-                setTimeout(convert, 0);
+                    setTimeout(convert, 0);
+                };
+                reader.readAsDataURL(imageFile);
             } else {
-                // 没有图片文件，让默认的粘贴行为发生
+                // 有 HTML 内容或纯文本，让默认粘贴行为发生
+                // 粘贴后处理图片标记
                 setTimeout(() => {
-                    // 粘贴后检查是否有 img 标签并添加标记
-                    const imgs = richInput.querySelectorAll('img:not([data-processed])');
+                    const imgs = richInput.querySelectorAll('img:not([data-image-index])');
                     imgs.forEach(img => {
                         imageCounter++;
-                        img.setAttribute('data-processed', 'true');
                         img.setAttribute('data-image-index', imageCounter);
-
-                        // 如果图片是 base64 或 blob，添加视觉标记
-                        const src = img.getAttribute('src') || '';
-                        if (src.startsWith('data:') || src.startsWith('blob:')) {
-                            img.style.outline = '2px solid #2196f3';
-                            img.title = '图片' + imageCounter + ' (将转换为占位符)';
-                        }
+                        img.style.maxWidth = '100%';
+                        img.style.height = 'auto';
                     });
                     convert();
                 }, 100);
